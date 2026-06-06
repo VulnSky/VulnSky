@@ -1,0 +1,55 @@
+# Local secrets and runtime configuration
+.env
+.env.*
+!.env.example
+profiles/*
+!profiles/default.env.example
+!profiles/.gitkeep
+
+# Local state and operation logs
+vulnsky.db
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.exit
+coverage.out
+
+# Test and coverage outputs
+*.test
+*.prof
+*.coverprofile
+cpu.out
+mem.out
+trace.out
+coverage/
+test-results/
+junit*.xml
+
+# Lab image files are large and should live outside the repository
+*.qcow2
+*.raw
+*.img
+*.vmdk
+*.vdi
+
+# Build outputs
+dist/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local agent planning notes
+docs/superpowers/
+
+# Old unrelated project folders kept locally only
+backend/
+frontend/

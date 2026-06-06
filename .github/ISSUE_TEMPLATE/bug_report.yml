@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible VulnSky problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the failure and the command you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: VulnSky version
+      description: Paste the output of `vulnsky version`.
+      placeholder: Version=...
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows 10/11
+        - Ubuntu/Debian
+        - Fedora
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Prefer `vulnsky doctor --redact`. Redact AccessKey, account IDs, public IPs, and any sensitive values before submitting.
+      render: text
