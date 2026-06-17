@@ -90,13 +90,7 @@ func (c *officialECSClient) ListImages(ctx context.Context, ownerAlias string) (
 	pageNumber := int32(1)
 	var images []Image
 	for {
-		req := (&ecsapi.DescribeImagesRequest{}).
-			SetRegionId(c.regionID).
-			SetPageNumber(pageNumber).
-			SetPageSize(100)
-		if ownerAlias != "" && ownerAlias != "all" {
-			req.SetImageOwnerAlias(ownerAlias)
-		}
+		req := describeImagesRequest(c.regionID, ownerAlias, pageNumber)
 		resp, err := c.client.DescribeImages(req)
 		if err != nil {
 			return nil, err
@@ -112,6 +106,18 @@ func (c *officialECSClient) ListImages(ctx context.Context, ownerAlias string) (
 		pageNumber++
 	}
 	return images, ctx.Err()
+}
+
+func describeImagesRequest(regionID string, ownerAlias string, pageNumber int32) *ecsapi.DescribeImagesRequest {
+	req := (&ecsapi.DescribeImagesRequest{}).
+		SetRegionId(regionID).
+		SetPageNumber(pageNumber).
+		SetPageSize(100).
+		SetStatus("Creating,Waiting,Available,UnAvailable,CreateFailed,Deprecated")
+	if ownerAlias != "" && ownerAlias != "all" {
+		req.SetImageOwnerAlias(ownerAlias)
+	}
+	return req
 }
 
 func (c *officialECSClient) ImportImage(ctx context.Context, input ImportImageInput) (string, string, string, error) {

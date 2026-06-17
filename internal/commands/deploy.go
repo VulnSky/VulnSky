@@ -387,15 +387,16 @@ func waitImageAvailable(ctx context.Context, cmd *cobra.Command, client aliyun.E
 			return aliyun.Image{}, err
 		}
 		if image, ok := findImageByID(images, imageID); ok {
-			logDeploy(cmd, "image", "image=%s status=%s target=Available", image.ID, dash(image.Status))
+			progress := dash(image.Progress)
+			logDeploy(cmd, "image", "image=%s status=%s progress=%s target=Available", image.ID, dash(image.Status), progress)
 			if isReusableImageStatus(image.Status) {
 				return image, nil
 			}
 			if isImageFailureStatus(image.Status) {
-				return aliyun.Image{}, fmt.Errorf("imported image %s failed with status %s", imageID, image.Status)
+				return aliyun.Image{}, fmt.Errorf("imported image %s failed with status %s progress=%s", imageID, image.Status, progress)
 			}
 		} else {
-			logDeploy(cmd, "image", "image=%s status=NotFound target=Available", imageID)
+			logDeploy(cmd, "image", "image=%s status=NotFound target=Available note=DescribeImages returned no matching image even with all statuses", imageID)
 		}
 		if time.Now().After(deadline) {
 			return aliyun.Image{}, fmt.Errorf("timed out waiting for image %s to become Available after %s", imageID, timeout)

@@ -3,6 +3,7 @@ package aliyun
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,6 +194,18 @@ func TestMapImagesIncludesImportOSSSource(t *testing.T) {
 	}
 	if images[0].SourceOSSBucket != "lab-bucket" || images[0].SourceOSSObject != "qcow2/sample-lab.qcow2" || images[0].SourceFormat != "qcow2" {
 		t.Fatalf("source not mapped: %#v", images[0])
+	}
+}
+
+func TestDescribeImagesRequestIncludesAllImportStatuses(t *testing.T) {
+	req := describeImagesRequest("cn-hangzhou", "self", 1)
+	if req.Status == nil {
+		t.Fatal("DescribeImages status filter is nil")
+	}
+	for _, want := range []string{"Creating", "Waiting", "Available", "UnAvailable", "CreateFailed", "Deprecated"} {
+		if !strings.Contains(*req.Status, want) {
+			t.Fatalf("DescribeImages status filter %q missing %q", *req.Status, want)
+		}
 	}
 }
 

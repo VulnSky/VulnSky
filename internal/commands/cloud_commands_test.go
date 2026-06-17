@@ -471,8 +471,60 @@ func TestDeployWaitsForImportedImageToBecomeAvailable(t *testing.T) {
 		t.Fatalf("deploy did not wait for imported image availability, calls=%d\n%s", fakeECS.listImagesCalls, buf.String())
 	}
 	out := buf.String()
-	if !strings.Contains(out, "[image] image=m-new status=Available target=Available") {
+	if !strings.Contains(out, "[image] image=m-new status=Available progress=- target=Available") {
 		t.Fatalf("deploy output missing image availability wait:\n%s", out)
+	}
+}
+
+func TestDeployFailsWhenImportedImageCreateFailed(t *testing.T) {
+	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "i-lab")
+	fakeECS := &deployFakeECS{
+		instance: aliyun.Instance{ID: "i-lab", Name: "lab", Status: "Stopped", ImageID: "m-old"},
+		task:     aliyun.TaskStatus{ID: "t-123", ResourceID: "m-new", Action: "ImportImage", Status: "Finished"},
+		imagePages: [][]aliyun.Image{
+			{{ID: "m-new", Name: "vulnsky-sample-lab", Status: "CreateFailed", Progress: "100%"}},
+		},
+		requireAvailableImageForReplace: true,
+	}
+	buf := new(bytes.Buffer)
+	cmd := NewRootCommandWithOptions(RootOptions{
+		RootDir: root,
+		Factories: ClientFactories{
+			NewSTS: func(config.Config) (aliyun.STSClient, error) {
+				return commandFakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}, nil
+			},
+			NewOSS: func(config.Config) (aliyun.OSSClient, error) {
+				return commandFakeOSS{exists: true}, nil
+			},
+			NewECS: func(config.Config) (aliyun.ECSClient, error) {
+				return fakeECS, nil
+			},
+		},
+	})
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"deploy", "qcow2/sample-lab.qcow2",
+		"--image-name", "vulnsky-sample-lab",
+		"--poll-interval", "1ms",
+		"--import-timeout", "100ms",
+		"--stop-timeout", "100ms",
+		"--start-timeout", "100ms",
+		"--force-stop",
+	})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected image create failure\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "CreateFailed") {
+		t.Fatalf("error = %v, want CreateFailed\n%s", err, buf.String())
+	}
+	if fakeECS.replaced {
+		t.Fatalf("deploy should not replace system disk after image failure:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "[image] image=m-new status=CreateFailed progress=100% target=Available") {
+		t.Fatalf("deploy output missing failed image status:\n%s", buf.String())
 	}
 }
 
