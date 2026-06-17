@@ -238,7 +238,11 @@ func (f commandFakeOSS) ObjectExists(context.Context, string, string) (bool, err
 	return f.exists, nil
 }
 
-func (f commandFakeOSS) UploadFile(context.Context, string, string, string, func(done int64, total int64)) (string, error) {
+func (f commandFakeOSS) UploadFile(_ context.Context, _ string, _ string, _ string, onProgress func(done int64, total int64)) (string, error) {
+	if onProgress != nil {
+		onProgress(5*1024*1024, 10*1024*1024)
+		onProgress(10*1024*1024, 10*1024*1024)
+	}
 	return "", nil
 }
 

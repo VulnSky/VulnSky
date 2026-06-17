@@ -207,10 +207,14 @@ func uploadDeployLocalSource(cmd *cobra.Command, cfg config.Config, client aliyu
 	}
 
 	logDeploy(cmd, "oss", "uploading local=%s key=%s size=%d", localPath, objectKey, size)
-	requestID, err := client.UploadFile(cmd.Context(), cfg.OSSBucket, objectKey, localPath, nil)
+	progress := newUploadProgressPrinter(func(format string, args ...any) {
+		logDeploy(cmd, "oss", format, args...)
+	})
+	requestID, err := client.UploadFile(cmd.Context(), cfg.OSSBucket, objectKey, localPath, progress.Callback)
 	if err != nil {
 		return "", err
 	}
+	progress.Finish(size)
 	if _, err := st.InsertUpload(store.UploadRecord{
 		ProfileName:  cfg.ProfileName,
 		AccountID:    accountID,

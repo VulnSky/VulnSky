@@ -131,10 +131,14 @@ func runOSSUpload(cmd *cobra.Command, state *rootState, localPath string, object
 		}
 	}
 
-	requestID, err := ossClient.UploadFile(cmd.Context(), cfg.OSSBucket, objectKey, localPath, nil)
+	progress := newUploadProgressPrinter(func(format string, args ...any) {
+		fmt.Fprintf(cmd.OutOrStdout(), format+"\n", args...)
+	})
+	requestID, err := ossClient.UploadFile(cmd.Context(), cfg.OSSBucket, objectKey, localPath, progress.Callback)
 	if err != nil {
 		return err
 	}
+	progress.Finish(size)
 	_, err = st.InsertUpload(store.UploadRecord{
 		ProfileName:  cfg.ProfileName,
 		AccountID:    accountID,

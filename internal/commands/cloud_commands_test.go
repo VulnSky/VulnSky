@@ -106,6 +106,37 @@ func TestOSSUploadStoresRecord(t *testing.T) {
 	}
 }
 
+func TestOSSUploadPrintsProgress(t *testing.T) {
+	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "")
+	qcow2 := filepath.Join(root, "lab.qcow2")
+	if err := os.WriteFile(qcow2, []byte("vulnsky"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	buf := new(bytes.Buffer)
+	cmd := NewRootCommandWithOptions(RootOptions{
+		RootDir: root,
+		Factories: ClientFactories{
+			NewSTS: func(config.Config) (aliyun.STSClient, error) {
+				return commandFakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}, nil
+			},
+			NewOSS: func(config.Config) (aliyun.OSSClient, error) {
+				return commandFakeOSS{}, nil
+			},
+		},
+	})
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"oss", "upload", qcow2, "--key", "images/lab.qcow2"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v\n%s", err, buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "upload progress 100.0%") {
+		t.Fatalf("oss upload output missing progress:\n%s", out)
+	}
+}
+
 func TestECSCurrentImageUsesDefaultInstance(t *testing.T) {
 	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "i-lab")
 	buf := new(bytes.Buffer)
@@ -623,6 +654,9 @@ func TestDeployUploadsLocalQCOW2BeforeImport(t *testing.T) {
 	if !strings.Contains(buf.String(), "[oss] uploaded qcow2/sample-lab.qcow2") {
 		t.Fatalf("deploy output missing upload log:\n%s", buf.String())
 	}
+	if !strings.Contains(buf.String(), "[oss] upload progress 100.0%") {
+		t.Fatalf("deploy output missing upload progress:\n%s", buf.String())
+	}
 }
 
 func TestECSStartRetriesUntilRunning(t *testing.T) {
@@ -955,9 +989,13 @@ func (f *deployUploadFakeOSS) ObjectExists(context.Context, string, string) (boo
 	return false, nil
 }
 
-func (f *deployUploadFakeOSS) UploadFile(_ context.Context, _ string, key string, path string, _ func(done int64, total int64)) (string, error) {
+func (f *deployUploadFakeOSS) UploadFile(_ context.Context, _ string, key string, path string, onProgress func(done int64, total int64)) (string, error) {
 	f.uploadedKey = key
 	f.uploadedPath = path
+	if onProgress != nil {
+		onProgress(5*1024*1024, 10*1024*1024)
+		onProgress(10*1024*1024, 10*1024*1024)
+	}
 	return "req-upload", nil
 }
 
