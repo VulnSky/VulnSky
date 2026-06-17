@@ -213,6 +213,40 @@ func TestImageImportStoresTask(t *testing.T) {
 	}
 }
 
+func TestImageImportUsesPlatformFlag(t *testing.T) {
+	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "")
+	var captured aliyun.ImportImageInput
+	buf := new(bytes.Buffer)
+	cmd := NewRootCommandWithOptions(RootOptions{
+		RootDir: root,
+		Factories: ClientFactories{
+			NewSTS: func(config.Config) (aliyun.STSClient, error) {
+				return commandFakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}, nil
+			},
+			NewECS: func(config.Config) (aliyun.ECSClient, error) {
+				return commandFakeECS{
+					importImageID:   "m-new",
+					importTaskID:    "t-123",
+					importRequestID: "req-import",
+					onImport: func(input aliyun.ImportImageInput) {
+						captured = input
+					},
+				}, nil
+			},
+		},
+	})
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"image", "import", "images/lab.qcow2", "--name", "vulnsky-lab", "--platform", "Debian"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v\n%s", err, buf.String())
+	}
+	if captured.Platform != "Debian" {
+		t.Fatalf("ImportImage platform = %q, want Debian", captured.Platform)
+	}
+}
+
 func TestImageImportRequiresOSSBucket(t *testing.T) {
 	root := writeECSOnlyProfile(t, "class-a", "123456789", "cn-hangzhou", "")
 	buf := new(bytes.Buffer)
@@ -439,6 +473,50 @@ func TestDeployWaitsForImportedImageToBecomeAvailable(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "[image] image=m-new status=Available target=Available") {
 		t.Fatalf("deploy output missing image availability wait:\n%s", out)
+	}
+}
+
+func TestDeployImportUsesPlatformFlag(t *testing.T) {
+	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "i-lab")
+	fakeECS := &deployFakeECS{
+		instance: aliyun.Instance{ID: "i-lab", Name: "lab", Status: "Stopped", ImageID: "m-old"},
+		task:     aliyun.TaskStatus{ID: "t-123", ResourceID: "m-new", Action: "ImportImage", Status: "Finished"},
+	}
+	buf := new(bytes.Buffer)
+	cmd := NewRootCommandWithOptions(RootOptions{
+		RootDir: root,
+		Factories: ClientFactories{
+			NewSTS: func(config.Config) (aliyun.STSClient, error) {
+				return commandFakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}, nil
+			},
+			NewOSS: func(config.Config) (aliyun.OSSClient, error) {
+				return commandFakeOSS{exists: true}, nil
+			},
+			NewECS: func(config.Config) (aliyun.ECSClient, error) {
+				return fakeECS, nil
+			},
+		},
+	})
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"deploy", "qcow2/kali-linux-2026.1.qcow2",
+		"--platform", "Debian",
+		"--poll-interval", "1ms",
+		"--import-timeout", "100ms",
+		"--stop-timeout", "100ms",
+		"--start-timeout", "100ms",
+		"--force-stop",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v\n%s", err, buf.String())
+	}
+	if fakeECS.importInput.Platform != "Debian" {
+		t.Fatalf("ImportImage platform = %q, want Debian", fakeECS.importInput.Platform)
+	}
+	if !strings.Contains(buf.String(), "platform=Debian") {
+		t.Fatalf("deploy output missing platform:\n%s", buf.String())
 	}
 }
 
@@ -984,6 +1062,7 @@ type deployFakeECS struct {
 	listImagesCalls                 int
 	importCalls                     int
 	importOSSObject                 string
+	importInput                     aliyun.ImportImageInput
 	importImageID                   string
 	importTaskID                    string
 	importRequestID                 string
@@ -1012,6 +1091,7 @@ func (f *deployFakeECS) ListImages(context.Context, string) ([]aliyun.Image, err
 func (f *deployFakeECS) ImportImage(_ context.Context, input aliyun.ImportImageInput) (string, string, string, error) {
 	f.importCalls++
 	f.importOSSObject = input.OSSObject
+	f.importInput = input
 	imageID := firstNonEmpty(f.importImageID, "m-new")
 	if len(f.images) == 0 && len(f.imagePages) == 0 {
 		f.images = []aliyun.Image{{ID: imageID, Name: input.ImageName, Status: "Available"}}

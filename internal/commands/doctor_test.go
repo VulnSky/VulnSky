@@ -260,6 +260,7 @@ type commandFakeECS struct {
 	importImageID   string
 	importTaskID    string
 	importRequestID string
+	onImport        func(aliyun.ImportImageInput)
 	task            aliyun.TaskStatus
 }
 
@@ -280,7 +281,10 @@ func (f commandFakeECS) ListImages(context.Context, string) ([]aliyun.Image, err
 	return f.images, nil
 }
 
-func (f commandFakeECS) ImportImage(context.Context, aliyun.ImportImageInput) (string, string, string, error) {
+func (f commandFakeECS) ImportImage(_ context.Context, input aliyun.ImportImageInput) (string, string, string, error) {
+	if f.onImport != nil {
+		f.onImport(input)
+	}
 	return f.importImageID, f.importTaskID, f.importRequestID, nil
 }
 

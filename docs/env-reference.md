@@ -35,7 +35,7 @@ VulnSky 使用根目录 `.env` 保存全局设置，使用 `profiles/<name>.env`
 | `VULNSKY_DEFAULT_OBJECT_PREFIX` | 否 | `qcow2/` | 本地 QCOW2 上传到 OSS 时的默认前缀。 |
 | `VULNSKY_DEFAULT_ARCHITECTURE` | 否 | `x86_64` | `ImportImage` 的架构。 |
 | `VULNSKY_DEFAULT_OS_TYPE` | 否 | `linux` | `ImportImage` 的 OS 类型。 |
-| `VULNSKY_DEFAULT_PLATFORM` | 否 | `Others Linux` | `ImportImage` 的平台类型。 |
+| `VULNSKY_DEFAULT_PLATFORM` | 否 | `Others Linux` | `ImportImage` 的平台类型。Kali、Debian 系 QCOW2 建议设为 `Debian`，也可以在命令中用 `--platform Debian` 临时覆盖。 |
 | `VULNSKY_AUTO_STOP_INSTANCE` | 否 | `true` | 预留配置，目前重装流程会按命令执行停机。 |
 | `VULNSKY_ALLOW_FORCE_STOP` | 否 | `false` | 是否默认允许强制关机。 |
 | `VULNSKY_STOP_TIMEOUT_SECONDS` | 否 | `60` | 等待 ECS 停机的默认超时时间。 |

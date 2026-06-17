@@ -141,6 +141,12 @@ ECS：
 .\dist\vulnsky.exe deploy "C:\Labs\sample-lab.qcow2" --key qcow2/sample-lab.qcow2 --force-stop
 ```
 
+Kali、Debian 系 QCOW2 可以显式指定镜像平台：
+
+```powershell
+.\dist\vulnsky.exe deploy "C:\Labs\kali-linux.qcow2" --key qcow2/kali-linux.qcow2 --platform Debian --force-stop
+```
+
 使用已有镜像直接重装默认 ECS：
 
 ```powershell

@@ -95,6 +95,23 @@ VULNSKY_OSS_UPLOAD_CHECKPOINT_DIR=./.vulnsky-checkpoints
 
 如果任务失败，检查 QCOW2 文件格式、OSS 对象路径、RAM 权限和 ECS 镜像导入角色。
 
+## 镜像导入平台类型不匹配
+
+阿里云 `ImportImage` 的 `Platform` 默认值是 `Others Linux`。如果导入 Kali、Debian 或其他 Debian 系 QCOW2 时任务失败，可以改用 `Debian`：
+
+```powershell
+.\dist\vulnsky.exe deploy "C:\Labs\kali-linux.qcow2" --platform Debian --force-stop
+.\dist\vulnsky.exe image import qcow2/kali-linux.qcow2 --platform Debian
+```
+
+也可以在 profile 中设置默认值：
+
+```env
+VULNSKY_DEFAULT_PLATFORM=Debian
+VULNSKY_DEFAULT_OS_TYPE=linux
+VULNSKY_DEFAULT_ARCHITECTURE=x86_64
+```
+
 ## ECS 启动或停机状态不接受操作
 
 重装系统盘前实例需要进入可操作状态。`deploy` 和 `ecs reimage` 会轮询停机和启动过程；如果云 API 返回 `IncorrectInstanceStatus`，通常是实例状态还在转换中。

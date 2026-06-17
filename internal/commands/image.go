@@ -6,10 +6,21 @@ import (
 	"strings"
 
 	"vulnsky/internal/aliyun"
+	"vulnsky/internal/config"
 	"vulnsky/internal/store"
 
 	"github.com/spf13/cobra"
 )
+
+type imageImportOptions struct {
+	Name             string
+	RoleName         string
+	Architecture     string
+	OSType           string
+	Platform         string
+	BootMode         string
+	DiskImageSizeGiB int32
+}
 
 func newImageCommand(state *rootState) *cobra.Command {
 	cmd := &cobra.Command{
@@ -44,11 +55,24 @@ func newImageCommand(state *rootState) *cobra.Command {
 		Short: "Import an OSS QCOW2 object as an ECS custom image",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, _ := cmd.Flags().GetString("name")
-			return runImageImport(cmd, state, args[0], name)
+			opts := imageImportOptions{}
+			opts.Name, _ = cmd.Flags().GetString("name")
+			opts.RoleName, _ = cmd.Flags().GetString("role-name")
+			opts.Architecture, _ = cmd.Flags().GetString("architecture")
+			opts.OSType, _ = cmd.Flags().GetString("os-type")
+			opts.Platform, _ = cmd.Flags().GetString("platform")
+			opts.BootMode, _ = cmd.Flags().GetString("boot-mode")
+			opts.DiskImageSizeGiB, _ = cmd.Flags().GetInt32("disk-size-gib")
+			return runImageImport(cmd, state, args[0], opts)
 		},
 	}
 	importCmd.Flags().String("name", "", "ECS custom image name")
+	importCmd.Flags().String("role-name", "", "RAM role name for ImportImage")
+	importCmd.Flags().String("architecture", "", "ImportImage architecture; defaults to VULNSKY_DEFAULT_ARCHITECTURE")
+	importCmd.Flags().String("os-type", "", "ImportImage OS type; defaults to VULNSKY_DEFAULT_OS_TYPE")
+	importCmd.Flags().String("platform", "", "ImportImage platform, for example Debian; defaults to VULNSKY_DEFAULT_PLATFORM")
+	importCmd.Flags().String("boot-mode", "", "optional ImportImage boot mode")
+	importCmd.Flags().Int32("disk-size-gib", 0, "optional imported system disk size in GiB")
 	cmd.AddCommand(importCmd)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "status <task-id>",
@@ -140,7 +164,7 @@ func runImageSource(cmd *cobra.Command, state *rootState, imageID string) error 
 	return fmt.Errorf("image not found: %s", imageID)
 }
 
-func runImageImport(cmd *cobra.Command, state *rootState, objectKey string, imageName string) error {
+func runImageImport(cmd *cobra.Command, state *rootState, objectKey string, opts imageImportOptions) error {
 	cfg, ecsClient, err := loadECSClient(state)
 	if err != nil {
 		return err
@@ -159,20 +183,24 @@ func runImageImport(cmd *cobra.Command, state *rootState, objectKey string, imag
 	if err != nil {
 		return err
 	}
+	imageName := opts.Name
 	if imageName == "" {
 		imageName = imageNameFromObjectKey(objectKey)
 	}
+	settings := imageImportSettingsFromOptions(cfg, opts)
 	imageID, taskID, requestID, err := ecsClient.ImportImage(cmd.Context(), aliyun.ImportImageInput{
 		RegionID:         cfg.CloudRegionID,
 		ImageName:        imageName,
 		OSSBucket:        cfg.OSSBucket,
 		OSSObject:        objectKey,
-		Architecture:     cfg.DefaultArchitecture,
-		OSType:           cfg.DefaultOSType,
-		Platform:         cfg.DefaultPlatform,
+		Architecture:     settings.Architecture,
+		OSType:           settings.OSType,
+		Platform:         settings.Platform,
+		BootMode:         settings.BootMode,
+		RoleName:         opts.RoleName,
 		ClientToken:      "",
 		Description:      "Imported by VulnSky",
-		DiskImageSizeGiB: 0,
+		DiskImageSizeGiB: opts.DiskImageSizeGiB,
 	})
 	if err != nil {
 		return err
@@ -192,15 +220,24 @@ func runImageImport(cmd *cobra.Command, state *rootState, objectKey string, imag
 		ImageID:      imageID,
 		TaskID:       taskID,
 		TaskStatus:   "Processing",
-		Platform:     cfg.DefaultPlatform,
-		Architecture: cfg.DefaultArchitecture,
-		OSType:       cfg.DefaultOSType,
+		Platform:     settings.Platform,
+		Architecture: settings.Architecture,
+		OSType:       settings.OSType,
 		RequestID:    requestID,
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "image=%s task=%s request=%s\n", imageID, taskID, requestID)
+	fmt.Fprintf(cmd.OutOrStdout(), "image=%s task=%s request=%s platform=%s os=%s arch=%s\n", imageID, taskID, requestID, settings.Platform, settings.OSType, settings.Architecture)
 	return nil
+}
+
+func imageImportSettingsFromOptions(cfg config.Config, opts imageImportOptions) imageImportSettings {
+	return imageImportSettings{
+		Architecture: firstNonEmpty(opts.Architecture, cfg.DefaultArchitecture),
+		OSType:       firstNonEmpty(opts.OSType, cfg.DefaultOSType),
+		Platform:     firstNonEmpty(opts.Platform, cfg.DefaultPlatform),
+		BootMode:     opts.BootMode,
+	}
 }
 
 func runImageStatus(cmd *cobra.Command, state *rootState, taskID string) error {

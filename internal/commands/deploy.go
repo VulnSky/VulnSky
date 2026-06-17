@@ -23,6 +23,10 @@ type deployOptions struct {
 	ImageName     string
 	ObjectKey     string
 	RoleName      string
+	Architecture  string
+	OSType        string
+	Platform      string
+	BootMode      string
 	ForceStop     bool
 	NoStart       bool
 	PollInterval  time.Duration
@@ -56,6 +60,10 @@ func newDeployCommand(state *rootState) *cobra.Command {
 	cmd.Flags().StringVar(&opts.ImageName, "image-name", "", "custom image name for ImportImage")
 	cmd.Flags().StringVar(&opts.ObjectKey, "key", "", "OSS object key when deploying a local qcow2 path")
 	cmd.Flags().StringVar(&opts.RoleName, "role-name", "", "RAM role name for ImportImage")
+	cmd.Flags().StringVar(&opts.Architecture, "architecture", "", "ImportImage architecture; defaults to VULNSKY_DEFAULT_ARCHITECTURE")
+	cmd.Flags().StringVar(&opts.OSType, "os-type", "", "ImportImage OS type; defaults to VULNSKY_DEFAULT_OS_TYPE")
+	cmd.Flags().StringVar(&opts.Platform, "platform", "", "ImportImage platform, for example Debian; defaults to VULNSKY_DEFAULT_PLATFORM")
+	cmd.Flags().StringVar(&opts.BootMode, "boot-mode", "", "optional ImportImage boot mode")
 	cmd.Flags().BoolVar(&opts.ForceStop, "force-stop", false, "force stop the ECS instance before replacing the system disk")
 	cmd.Flags().BoolVar(&opts.NoStart, "no-start", false, "leave the ECS instance stopped after replacing the system disk")
 	cmd.Flags().DurationVar(&opts.PollInterval, "poll-interval", 15*time.Second, "poll interval for cloud tasks")
@@ -128,13 +136,14 @@ func runDeploy(cmd *cobra.Command, state *rootState, source string, opts deployO
 		if imageName == "" {
 			imageName = deployImageName(objectKey, time.Now())
 		}
+		settings := deployImageImportSettings(cfg, opts)
 		if reusedImageID, reused, err := findReusableImportedImage(cmd, cfg, accountID, ecsClient, objectKey, imageName); err != nil {
 			return err
 		} else if reused {
 			imageID = reusedImageID
 		} else {
 			requestID := ""
-			imageID, taskID, requestID, err = startImageImport(cmd, cfg, ecsClient, objectKey, imageName, opts)
+			imageID, taskID, requestID, err = startImageImport(cmd, cfg, ecsClient, objectKey, imageName, settings, opts)
 			if err != nil {
 				return err
 			}
@@ -147,7 +156,7 @@ func runDeploy(cmd *cobra.Command, state *rootState, source string, opts deployO
 			if _, err := waitImageAvailable(cmd.Context(), cmd, ecsClient, imageID, opts.ImportTimeout, opts.PollInterval); err != nil {
 				return err
 			}
-			if err := recordImageImport(cfg, accountID, imageName, imageID, taskID, requestID, cfg.OSSBucket, objectKey, "Finished"); err != nil {
+			if err := recordImageImport(cfg, accountID, imageName, imageID, taskID, requestID, cfg.OSSBucket, objectKey, "Finished", settings); err != nil {
 				return err
 			}
 		}
@@ -261,7 +270,11 @@ func findReusableImportedImage(cmd *cobra.Command, cfg config.Config, accountID 
 
 	if image, ok := findImageByOSSObject(images, cfg.OSSBucket, objectKey); ok {
 		logDeploy(cmd, "image", "reused image=%s object=%s source=ecs status=%s", image.ID, objectKey, dash(image.Status))
-		if err := recordImageImport(cfg, accountID, firstNonEmpty(image.Name, imageName), image.ID, "", "", cfg.OSSBucket, objectKey, "Reused"); err != nil {
+		if err := recordImageImport(cfg, accountID, firstNonEmpty(image.Name, imageName), image.ID, "", "", cfg.OSSBucket, objectKey, "Reused", imageImportSettings{
+			Architecture: firstNonEmpty(image.Architecture, cfg.DefaultArchitecture),
+			OSType:       firstNonEmpty(image.OSType, cfg.DefaultOSType),
+			Platform:     firstNonEmpty(image.Platform, cfg.DefaultPlatform),
+		}); err != nil {
 			return "", false, err
 		}
 		return image.ID, true, nil
@@ -295,15 +308,32 @@ func isReusableImageStatus(status string) bool {
 	return strings.EqualFold(strings.TrimSpace(status), "Available")
 }
 
-func startImageImport(cmd *cobra.Command, cfg config.Config, client aliyun.ECSClient, objectKey string, imageName string, opts deployOptions) (string, string, string, error) {
+type imageImportSettings struct {
+	Architecture string
+	OSType       string
+	Platform     string
+	BootMode     string
+}
+
+func deployImageImportSettings(cfg config.Config, opts deployOptions) imageImportSettings {
+	return imageImportSettings{
+		Architecture: firstNonEmpty(opts.Architecture, cfg.DefaultArchitecture),
+		OSType:       firstNonEmpty(opts.OSType, cfg.DefaultOSType),
+		Platform:     firstNonEmpty(opts.Platform, cfg.DefaultPlatform),
+		BootMode:     opts.BootMode,
+	}
+}
+
+func startImageImport(cmd *cobra.Command, cfg config.Config, client aliyun.ECSClient, objectKey string, imageName string, settings imageImportSettings, opts deployOptions) (string, string, string, error) {
 	imageID, taskID, requestID, err := client.ImportImage(cmd.Context(), aliyun.ImportImageInput{
 		RegionID:         cfg.CloudRegionID,
 		ImageName:        imageName,
 		OSSBucket:        cfg.OSSBucket,
 		OSSObject:        objectKey,
-		Architecture:     cfg.DefaultArchitecture,
-		OSType:           cfg.DefaultOSType,
-		Platform:         cfg.DefaultPlatform,
+		Architecture:     settings.Architecture,
+		OSType:           settings.OSType,
+		Platform:         settings.Platform,
+		BootMode:         settings.BootMode,
 		RoleName:         opts.RoleName,
 		Description:      "Imported by VulnSky",
 		DiskImageSizeGiB: opts.DiskSizeGiB,
@@ -311,7 +341,7 @@ func startImageImport(cmd *cobra.Command, cfg config.Config, client aliyun.ECSCl
 	if err != nil {
 		return "", "", "", err
 	}
-	logDeploy(cmd, "image", "import started image=%s task=%s request=%s name=%s", imageID, taskID, requestID, imageName)
+	logDeploy(cmd, "image", "import started image=%s task=%s request=%s name=%s platform=%s os=%s arch=%s", imageID, taskID, requestID, imageName, settings.Platform, settings.OSType, settings.Architecture)
 	return imageID, taskID, requestID, nil
 }
 
@@ -479,7 +509,7 @@ func reimageInstanceWithImage(cmd *cobra.Command, cfg config.Config, accountID s
 	return final, nil
 }
 
-func recordImageImport(cfg config.Config, accountID string, imageName string, imageID string, taskID string, requestID string, ossBucket string, ossObject string, taskStatus string) error {
+func recordImageImport(cfg config.Config, accountID string, imageName string, imageID string, taskID string, requestID string, ossBucket string, ossObject string, taskStatus string, settings imageImportSettings) error {
 	st := store.New(cfg.DBPath)
 	if err := st.Init(); err != nil {
 		return err
@@ -495,9 +525,9 @@ func recordImageImport(cfg config.Config, accountID string, imageName string, im
 		ImageID:      imageID,
 		TaskID:       taskID,
 		TaskStatus:   taskStatus,
-		Platform:     cfg.DefaultPlatform,
-		Architecture: cfg.DefaultArchitecture,
-		OSType:       cfg.DefaultOSType,
+		Platform:     settings.Platform,
+		Architecture: settings.Architecture,
+		OSType:       settings.OSType,
 		RequestID:    requestID,
 	})
 	return err
