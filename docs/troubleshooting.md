@@ -29,6 +29,28 @@ vulnsky --root "$HOME\vulnsky\work" doctor --redact
 
 首次运行真实子命令时会自动生成模板文件，也可以手动复制仓库里的 `.env.example` 和 `profiles/default.env.example`。
 
+## OSS 上传出现 TLS handshake timeout
+
+如果上传 QCOW2 时看到类似错误：
+
+```text
+operation error PutObject: ... net/http: TLS handshake timeout
+```
+
+常见原因是网络到 OSS endpoint 的 TLS 握手超过默认时间，或者旧版本使用单次 `PutObject` 上传大文件。建议升级到使用 OSS 分片上传的版本，并在 profile 中按网络情况调大这些参数：
+
+```env
+VULNSKY_OSS_CONNECT_TIMEOUT_SECONDS=60
+VULNSKY_OSS_READ_WRITE_TIMEOUT_SECONDS=600
+VULNSKY_OSS_RETRY_MAX_ATTEMPTS=8
+VULNSKY_OSS_UPLOAD_PART_SIZE_MIB=64
+VULNSKY_OSS_UPLOAD_PARALLEL=2
+VULNSKY_OSS_UPLOAD_CHECKPOINT=true
+VULNSKY_OSS_UPLOAD_CHECKPOINT_DIR=./.vulnsky-checkpoints
+```
+
+如果网络不稳定，优先降低 `VULNSKY_OSS_UPLOAD_PARALLEL`，保持 checkpoint 开启；再次运行同一条上传或 deploy 命令时会尽量从断点继续。
+
 ## AccessKey 或账号不匹配
 
 如果 `doctor` 的 STS 检查失败，优先检查：

@@ -8,6 +8,7 @@ profiles/*
 
 # Local state and operation logs
 vulnsky.db
+.vulnsky-checkpoints/
 *.db
 *.db-shm
 *.db-wal

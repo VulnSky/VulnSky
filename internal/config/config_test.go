@@ -20,6 +20,13 @@ func TestLoadProfileConfig(t *testing.T) {
 		"ALIBABA_OSS_REGION_ID=cn-hangzhou\n"+
 		"ALIBABA_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com\n"+
 		"ALIBABA_OSS_BUCKET=lab-bucket\n"+
+		"VULNSKY_OSS_CONNECT_TIMEOUT_SECONDS=45\n"+
+		"VULNSKY_OSS_READ_WRITE_TIMEOUT_SECONDS=600\n"+
+		"VULNSKY_OSS_RETRY_MAX_ATTEMPTS=7\n"+
+		"VULNSKY_OSS_UPLOAD_PART_SIZE_MIB=128\n"+
+		"VULNSKY_OSS_UPLOAD_PARALLEL=4\n"+
+		"VULNSKY_OSS_UPLOAD_CHECKPOINT=false\n"+
+		"VULNSKY_OSS_UPLOAD_CHECKPOINT_DIR=./oss-cp\n"+
 		"VULNSKY_STOP_TIMEOUT_SECONDS=60\n")
 
 	cfg, err := Load(root, "")
@@ -28,6 +35,43 @@ func TestLoadProfileConfig(t *testing.T) {
 	}
 	if cfg.ProfileName != "class-a" || cfg.OSSBucket != "lab-bucket" || cfg.StopTimeoutSeconds != 60 {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	if cfg.OSSConnectTimeoutSeconds != 45 ||
+		cfg.OSSReadWriteTimeoutSeconds != 600 ||
+		cfg.OSSRetryMaxAttempts != 7 ||
+		cfg.OSSUploadPartSizeMiB != 128 ||
+		cfg.OSSUploadParallel != 4 ||
+		cfg.OSSUploadCheckpoint ||
+		cfg.OSSUploadCheckpointDir != filepath.Join(root, "oss-cp") {
+		t.Fatalf("unexpected OSS upload config: %+v", cfg)
+	}
+}
+
+func TestLoadUsesLargeOSSUploadDefaults(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, ".env"), "VULNSKY_ACTIVE_PROFILE=class-a\nVULNSKY_PROFILE_DIR=./profiles\n")
+	if err := os.Mkdir(filepath.Join(root, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "profiles", "class-a.env"), ""+
+		"ALIBABA_CLOUD_ACCESS_KEY_ID=ak\n"+
+		"ALIBABA_CLOUD_ACCESS_KEY_SECRET=secret\n"+
+		"ALIBABA_CLOUD_REGION_ID=cn-hangzhou\n"+
+		"ALIBABA_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com\n"+
+		"ALIBABA_OSS_BUCKET=lab-bucket\n")
+
+	cfg, err := Load(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OSSConnectTimeoutSeconds != 30 ||
+		cfg.OSSReadWriteTimeoutSeconds != 300 ||
+		cfg.OSSRetryMaxAttempts != 5 ||
+		cfg.OSSUploadPartSizeMiB != 64 ||
+		cfg.OSSUploadParallel != 3 ||
+		!cfg.OSSUploadCheckpoint ||
+		cfg.OSSUploadCheckpointDir != filepath.Join(root, ".vulnsky-checkpoints") {
+		t.Fatalf("unexpected default OSS upload config: %+v", cfg)
 	}
 }
 

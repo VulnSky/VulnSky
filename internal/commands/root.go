@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"time"
+
 	"vulnsky/internal/aliyun"
 	"vulnsky/internal/config"
 
@@ -81,10 +83,17 @@ func (f ClientFactories) withDefaults() ClientFactories {
 	if f.NewOSS == nil {
 		f.NewOSS = func(cfg config.Config) (aliyun.OSSClient, error) {
 			return aliyun.NewOSSClient(aliyun.OSSOptions{
-				AccessKeyID:     cfg.OSSAccessKeyID,
-				AccessKeySecret: cfg.OSSAccessKeySecret,
-				RegionID:        cfg.OSSRegionID,
-				Endpoint:        cfg.OSSEndpoint,
+				AccessKeyID:         cfg.OSSAccessKeyID,
+				AccessKeySecret:     cfg.OSSAccessKeySecret,
+				RegionID:            cfg.OSSRegionID,
+				Endpoint:            cfg.OSSEndpoint,
+				ConnectTimeout:      time.Duration(cfg.OSSConnectTimeoutSeconds) * time.Second,
+				ReadWriteTimeout:    time.Duration(cfg.OSSReadWriteTimeoutSeconds) * time.Second,
+				RetryMaxAttempts:    cfg.OSSRetryMaxAttempts,
+				UploadPartSizeBytes: int64(cfg.OSSUploadPartSizeMiB) * 1024 * 1024,
+				UploadParallel:      cfg.OSSUploadParallel,
+				UploadCheckpoint:    cfg.OSSUploadCheckpoint,
+				UploadCheckpointDir: cfg.OSSUploadCheckpointDir,
 			})
 		}
 	}

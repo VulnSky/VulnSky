@@ -5,6 +5,7 @@
 profiles/*
 !profiles/default.env.example
 vulnsky.db
+.vulnsky-checkpoints/
 *.db
 *.db-shm
 *.db-wal

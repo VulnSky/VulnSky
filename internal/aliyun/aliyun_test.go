@@ -85,6 +85,35 @@ func TestOfficialConstructorsDoNotCallNetwork(t *testing.T) {
 	}
 }
 
+func TestOSSClientStoresLargeUploadOptions(t *testing.T) {
+	client, err := NewOSSClient(OSSOptions{
+		AccessKeyID:         "ak",
+		AccessKeySecret:     "secret",
+		RegionID:            "cn-hangzhou",
+		Endpoint:            "https://oss-cn-hangzhou.aliyuncs.com",
+		ConnectTimeout:      45 * time.Second,
+		ReadWriteTimeout:    600 * time.Second,
+		RetryMaxAttempts:    7,
+		UploadPartSizeBytes: 128 * 1024 * 1024,
+		UploadParallel:      4,
+		UploadCheckpoint:    true,
+		UploadCheckpointDir: "/tmp/vulnsky-cp",
+	})
+	if err != nil {
+		t.Fatalf("NewOSSClient() error = %v", err)
+	}
+	official, ok := client.(*officialOSSClient)
+	if !ok {
+		t.Fatalf("NewOSSClient() type = %T, want *officialOSSClient", client)
+	}
+	if official.uploadPartSizeBytes != 128*1024*1024 ||
+		official.uploadParallel != 4 ||
+		!official.uploadCheckpoint ||
+		official.uploadCheckpointDir != "/tmp/vulnsky-cp" {
+		t.Fatalf("unexpected upload options: %#v", official)
+	}
+}
+
 func TestFakeClientsSatisfyWorkflowInterfaces(t *testing.T) {
 	ctx := context.Background()
 	sts := &fakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}

@@ -11,29 +11,36 @@ import (
 )
 
 type Config struct {
-	RootDir              string
-	ProfileName          string
-	ProfileLabel         string
-	DBPath               string
-	ProfileDir           string
-	ExpectedAccountID    string
-	CloudAccessKeyID     string
-	CloudAccessKeySecret string
-	CloudRegionID        string
-	OSSAccessKeyID       string
-	OSSAccessKeySecret   string
-	OSSRegionID          string
-	OSSEndpoint          string
-	OSSBucket            string
-	DefaultECSInstanceID string
-	DefaultObjectPrefix  string
-	DefaultArchitecture  string
-	DefaultOSType        string
-	DefaultPlatform      string
-	AutoStopInstance     bool
-	AllowForceStop       bool
-	StopTimeoutSeconds   int
-	StartAfterReimage    bool
+	RootDir                    string
+	ProfileName                string
+	ProfileLabel               string
+	DBPath                     string
+	ProfileDir                 string
+	ExpectedAccountID          string
+	CloudAccessKeyID           string
+	CloudAccessKeySecret       string
+	CloudRegionID              string
+	OSSAccessKeyID             string
+	OSSAccessKeySecret         string
+	OSSRegionID                string
+	OSSEndpoint                string
+	OSSBucket                  string
+	OSSConnectTimeoutSeconds   int
+	OSSReadWriteTimeoutSeconds int
+	OSSRetryMaxAttempts        int
+	OSSUploadPartSizeMiB       int
+	OSSUploadParallel          int
+	OSSUploadCheckpoint        bool
+	OSSUploadCheckpointDir     string
+	DefaultECSInstanceID       string
+	DefaultObjectPrefix        string
+	DefaultArchitecture        string
+	DefaultOSType              string
+	DefaultPlatform            string
+	AutoStopInstance           bool
+	AllowForceStop             bool
+	StopTimeoutSeconds         int
+	StartAfterReimage          bool
 }
 
 func Load(rootDir string, explicitProfile string) (Config, error) {
@@ -56,29 +63,36 @@ func Load(rootDir string, explicitProfile string) (Config, error) {
 	env := merge(global, profileEnv)
 
 	cfg := Config{
-		RootDir:              rootDir,
-		ProfileName:          profile,
-		ProfileLabel:         first(env["VULNSKY_PROFILE_LABEL"], profile),
-		DBPath:               filepath.Join(rootDir, first(env["VULNSKY_DB_PATH"], "./vulnsky.db")),
-		ProfileDir:           profileDir,
-		ExpectedAccountID:    env["VULNSKY_EXPECTED_ACCOUNT_ID"],
-		CloudAccessKeyID:     env["ALIBABA_CLOUD_ACCESS_KEY_ID"],
-		CloudAccessKeySecret: env["ALIBABA_CLOUD_ACCESS_KEY_SECRET"],
-		CloudRegionID:        env["ALIBABA_CLOUD_REGION_ID"],
-		OSSAccessKeyID:       first(env["ALIBABA_OSS_ACCESS_KEY_ID"], env["ALIBABA_CLOUD_ACCESS_KEY_ID"]),
-		OSSAccessKeySecret:   first(env["ALIBABA_OSS_ACCESS_KEY_SECRET"], env["ALIBABA_CLOUD_ACCESS_KEY_SECRET"]),
-		OSSRegionID:          first(env["ALIBABA_OSS_REGION_ID"], env["ALIBABA_CLOUD_REGION_ID"]),
-		OSSEndpoint:          env["ALIBABA_OSS_ENDPOINT"],
-		OSSBucket:            env["ALIBABA_OSS_BUCKET"],
-		DefaultECSInstanceID: env["VULNSKY_DEFAULT_ECS_INSTANCE_ID"],
-		DefaultObjectPrefix:  first(env["VULNSKY_DEFAULT_OBJECT_PREFIX"], "qcow2/"),
-		DefaultArchitecture:  first(env["VULNSKY_DEFAULT_ARCHITECTURE"], "x86_64"),
-		DefaultOSType:        first(env["VULNSKY_DEFAULT_OS_TYPE"], "linux"),
-		DefaultPlatform:      first(env["VULNSKY_DEFAULT_PLATFORM"], "Others Linux"),
-		AutoStopInstance:     boolValue(env["VULNSKY_AUTO_STOP_INSTANCE"], true),
-		AllowForceStop:       boolValue(env["VULNSKY_ALLOW_FORCE_STOP"], false),
-		StopTimeoutSeconds:   intValue(env["VULNSKY_STOP_TIMEOUT_SECONDS"], 60),
-		StartAfterReimage:    boolValue(env["VULNSKY_START_AFTER_REIMAGE"], true),
+		RootDir:                    rootDir,
+		ProfileName:                profile,
+		ProfileLabel:               first(env["VULNSKY_PROFILE_LABEL"], profile),
+		DBPath:                     filepath.Join(rootDir, first(env["VULNSKY_DB_PATH"], "./vulnsky.db")),
+		ProfileDir:                 profileDir,
+		ExpectedAccountID:          env["VULNSKY_EXPECTED_ACCOUNT_ID"],
+		CloudAccessKeyID:           env["ALIBABA_CLOUD_ACCESS_KEY_ID"],
+		CloudAccessKeySecret:       env["ALIBABA_CLOUD_ACCESS_KEY_SECRET"],
+		CloudRegionID:              env["ALIBABA_CLOUD_REGION_ID"],
+		OSSAccessKeyID:             first(env["ALIBABA_OSS_ACCESS_KEY_ID"], env["ALIBABA_CLOUD_ACCESS_KEY_ID"]),
+		OSSAccessKeySecret:         first(env["ALIBABA_OSS_ACCESS_KEY_SECRET"], env["ALIBABA_CLOUD_ACCESS_KEY_SECRET"]),
+		OSSRegionID:                first(env["ALIBABA_OSS_REGION_ID"], env["ALIBABA_CLOUD_REGION_ID"]),
+		OSSEndpoint:                env["ALIBABA_OSS_ENDPOINT"],
+		OSSBucket:                  env["ALIBABA_OSS_BUCKET"],
+		OSSConnectTimeoutSeconds:   intValue(env["VULNSKY_OSS_CONNECT_TIMEOUT_SECONDS"], 30),
+		OSSReadWriteTimeoutSeconds: intValue(env["VULNSKY_OSS_READ_WRITE_TIMEOUT_SECONDS"], 300),
+		OSSRetryMaxAttempts:        intValue(env["VULNSKY_OSS_RETRY_MAX_ATTEMPTS"], 5),
+		OSSUploadPartSizeMiB:       intValue(env["VULNSKY_OSS_UPLOAD_PART_SIZE_MIB"], 64),
+		OSSUploadParallel:          intValue(env["VULNSKY_OSS_UPLOAD_PARALLEL"], 3),
+		OSSUploadCheckpoint:        boolValue(env["VULNSKY_OSS_UPLOAD_CHECKPOINT"], true),
+		OSSUploadCheckpointDir:     resolvePath(rootDir, first(env["VULNSKY_OSS_UPLOAD_CHECKPOINT_DIR"], "./.vulnsky-checkpoints")),
+		DefaultECSInstanceID:       env["VULNSKY_DEFAULT_ECS_INSTANCE_ID"],
+		DefaultObjectPrefix:        first(env["VULNSKY_DEFAULT_OBJECT_PREFIX"], "qcow2/"),
+		DefaultArchitecture:        first(env["VULNSKY_DEFAULT_ARCHITECTURE"], "x86_64"),
+		DefaultOSType:              first(env["VULNSKY_DEFAULT_OS_TYPE"], "linux"),
+		DefaultPlatform:            first(env["VULNSKY_DEFAULT_PLATFORM"], "Others Linux"),
+		AutoStopInstance:           boolValue(env["VULNSKY_AUTO_STOP_INSTANCE"], true),
+		AllowForceStop:             boolValue(env["VULNSKY_ALLOW_FORCE_STOP"], false),
+		StopTimeoutSeconds:         intValue(env["VULNSKY_STOP_TIMEOUT_SECONDS"], 60),
+		StartAfterReimage:          boolValue(env["VULNSKY_START_AFTER_REIMAGE"], true),
 	}
 	return cfg, nil
 }
@@ -139,6 +153,13 @@ func first(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func resolvePath(rootDir string, value string) string {
+	if value == "" || filepath.IsAbs(value) {
+		return value
+	}
+	return filepath.Join(rootDir, value)
 }
 
 func boolValue(value string, fallback bool) bool {

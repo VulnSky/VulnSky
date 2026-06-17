@@ -41,11 +41,18 @@ type STSOptions struct {
 }
 
 type OSSOptions struct {
-	AccessKeyID     string
-	AccessKeySecret string
-	SecurityToken   string
-	RegionID        string
-	Endpoint        string
+	AccessKeyID         string
+	AccessKeySecret     string
+	SecurityToken       string
+	RegionID            string
+	Endpoint            string
+	ConnectTimeout      time.Duration
+	ReadWriteTimeout    time.Duration
+	RetryMaxAttempts    int
+	UploadPartSizeBytes int64
+	UploadParallel      int
+	UploadCheckpoint    bool
+	UploadCheckpointDir string
 }
 
 type ECSOptions struct {
