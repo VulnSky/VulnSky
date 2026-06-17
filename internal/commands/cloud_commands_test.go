@@ -387,6 +387,61 @@ func TestDeployImportsObjectAndReimagesDefaultECS(t *testing.T) {
 	}
 }
 
+func TestDeployWaitsForImportedImageToBecomeAvailable(t *testing.T) {
+	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "i-lab")
+	fakeECS := &deployFakeECS{
+		instance: aliyun.Instance{ID: "i-lab", Name: "lab", Status: "Stopped", ImageID: "m-old"},
+		task:     aliyun.TaskStatus{ID: "t-123", ResourceID: "m-new", Action: "ImportImage", Status: "Finished"},
+		imagePages: [][]aliyun.Image{
+			{},
+			{},
+			{{ID: "m-new", Name: "vulnsky-sample-lab", Status: "Creating"}},
+			{{ID: "m-new", Name: "vulnsky-sample-lab", Status: "Available"}},
+		},
+		requireAvailableImageForReplace: true,
+	}
+	buf := new(bytes.Buffer)
+	cmd := NewRootCommandWithOptions(RootOptions{
+		RootDir: root,
+		Factories: ClientFactories{
+			NewSTS: func(config.Config) (aliyun.STSClient, error) {
+				return commandFakeSTS{accountID: "123456789", arn: "acs:ram::123456789:user/test"}, nil
+			},
+			NewOSS: func(config.Config) (aliyun.OSSClient, error) {
+				return commandFakeOSS{exists: true}, nil
+			},
+			NewECS: func(config.Config) (aliyun.ECSClient, error) {
+				return fakeECS, nil
+			},
+		},
+	})
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"deploy", "qcow2/sample-lab.qcow2",
+		"--image-name", "vulnsky-sample-lab",
+		"--poll-interval", "1ms",
+		"--import-timeout", "100ms",
+		"--stop-timeout", "100ms",
+		"--start-timeout", "100ms",
+		"--force-stop",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v\n%s", err, buf.String())
+	}
+	if !fakeECS.replaced {
+		t.Fatalf("deploy did not replace system disk:\n%s", buf.String())
+	}
+	if fakeECS.listImagesCalls < 4 {
+		t.Fatalf("deploy did not wait for imported image availability, calls=%d\n%s", fakeECS.listImagesCalls, buf.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[image] image=m-new status=Available target=Available") {
+		t.Fatalf("deploy output missing image availability wait:\n%s", out)
+	}
+}
+
 func TestDeployReusesFinishedImageImportWhenImageStillExists(t *testing.T) {
 	root := writeDoctorProfile(t, "class-a", "123456789", "cn-hangzhou", "cn-hangzhou", "i-lab")
 	st := store.New(filepath.Join(root, "vulnsky.db"))
@@ -915,20 +970,23 @@ func TestECSReimageRecordsReplaceBeforeStartFailure(t *testing.T) {
 }
 
 type deployFakeECS struct {
-	instance        aliyun.Instance
-	images          []aliyun.Image
-	task            aliyun.TaskStatus
-	stopped         bool
-	replaced        bool
-	started         bool
-	forceStop       bool
-	startFailures   int
-	startCalls      int
-	importCalls     int
-	importOSSObject string
-	importImageID   string
-	importTaskID    string
-	importRequestID string
+	instance                        aliyun.Instance
+	images                          []aliyun.Image
+	imagePages                      [][]aliyun.Image
+	task                            aliyun.TaskStatus
+	stopped                         bool
+	replaced                        bool
+	started                         bool
+	forceStop                       bool
+	requireAvailableImageForReplace bool
+	startFailures                   int
+	startCalls                      int
+	listImagesCalls                 int
+	importCalls                     int
+	importOSSObject                 string
+	importImageID                   string
+	importTaskID                    string
+	importRequestID                 string
 }
 
 func (f *deployFakeECS) ListInstances(context.Context) ([]aliyun.Instance, error) {
@@ -940,13 +998,25 @@ func (f *deployFakeECS) DescribeInstance(context.Context, string) (aliyun.Instan
 }
 
 func (f *deployFakeECS) ListImages(context.Context, string) ([]aliyun.Image, error) {
+	f.listImagesCalls++
+	if len(f.imagePages) > 0 {
+		index := f.listImagesCalls - 1
+		if index >= len(f.imagePages) {
+			index = len(f.imagePages) - 1
+		}
+		f.images = f.imagePages[index]
+	}
 	return f.images, nil
 }
 
 func (f *deployFakeECS) ImportImage(_ context.Context, input aliyun.ImportImageInput) (string, string, string, error) {
 	f.importCalls++
 	f.importOSSObject = input.OSSObject
-	return firstNonEmpty(f.importImageID, "m-new"), firstNonEmpty(f.importTaskID, "t-123"), firstNonEmpty(f.importRequestID, "req-import"), nil
+	imageID := firstNonEmpty(f.importImageID, "m-new")
+	if len(f.images) == 0 && len(f.imagePages) == 0 {
+		f.images = []aliyun.Image{{ID: imageID, Name: input.ImageName, Status: "Available"}}
+	}
+	return imageID, firstNonEmpty(f.importTaskID, "t-123"), firstNonEmpty(f.importRequestID, "req-import"), nil
 }
 
 func (f *deployFakeECS) DescribeTask(context.Context, string) (aliyun.TaskStatus, error) {
@@ -971,9 +1041,21 @@ func (f *deployFakeECS) StartInstance(context.Context, string) error {
 }
 
 func (f *deployFakeECS) ReplaceSystemDisk(_ context.Context, _ string, imageID string) (string, string, error) {
+	if f.requireAvailableImageForReplace && !fakeHasAvailableImage(f.images, imageID) {
+		return "", "", fmt.Errorf("SDKError: Code: InvalidImageId.NotFound")
+	}
 	f.replaced = true
 	f.instance.ImageID = imageID
 	return "d-new", "req-replace", nil
+}
+
+func fakeHasAvailableImage(images []aliyun.Image, imageID string) bool {
+	for _, image := range images {
+		if image.ID == imageID && strings.EqualFold(image.Status, "Available") {
+			return true
+		}
+	}
+	return false
 }
 
 type deployUploadFakeOSS struct {

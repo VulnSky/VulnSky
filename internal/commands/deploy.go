@@ -144,6 +144,9 @@ func runDeploy(cmd *cobra.Command, state *rootState, source string, opts deployO
 			if imageID, err = waitImageImport(cmd.Context(), cmd, ecsClient, taskID, imageID, opts.ImportTimeout, opts.PollInterval); err != nil {
 				return err
 			}
+			if _, err := waitImageAvailable(cmd.Context(), cmd, ecsClient, imageID, opts.ImportTimeout, opts.PollInterval); err != nil {
+				return err
+			}
 			if err := recordImageImport(cfg, accountID, imageName, imageID, taskID, requestID, cfg.OSSBucket, objectKey, "Finished"); err != nil {
 				return err
 			}
@@ -324,7 +327,11 @@ func waitImageImport(ctx context.Context, cmd *cobra.Command, client aliyun.ECSC
 		} else {
 			logDeploy(cmd, "image", "task=%s status=%s resource=%s", task.ID, task.Status, task.ResourceID)
 			if isTaskSuccess(task.Status) {
-				return firstNonEmpty(task.ResourceID, fallbackImageID), nil
+				imageID := firstNonEmpty(task.ResourceID, fallbackImageID)
+				if imageID == "" {
+					return "", fmt.Errorf("ImportImage task %s finished without image id", taskID)
+				}
+				return imageID, nil
 			}
 			if isTaskFailure(task.Status) {
 				return "", fmt.Errorf("ImportImage task %s failed with status %s", taskID, task.Status)
@@ -335,6 +342,36 @@ func waitImageImport(ctx context.Context, cmd *cobra.Command, client aliyun.ECSC
 		}
 		if err := sleepContext(ctx, interval); err != nil {
 			return "", err
+		}
+	}
+}
+
+func waitImageAvailable(ctx context.Context, cmd *cobra.Command, client aliyun.ECSClient, imageID string, timeout time.Duration, interval time.Duration) (aliyun.Image, error) {
+	if imageID == "" {
+		return aliyun.Image{}, fmt.Errorf("missing image id while waiting for image availability")
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		images, err := client.ListImages(ctx, "self")
+		if err != nil {
+			return aliyun.Image{}, err
+		}
+		if image, ok := findImageByID(images, imageID); ok {
+			logDeploy(cmd, "image", "image=%s status=%s target=Available", image.ID, dash(image.Status))
+			if isReusableImageStatus(image.Status) {
+				return image, nil
+			}
+			if isImageFailureStatus(image.Status) {
+				return aliyun.Image{}, fmt.Errorf("imported image %s failed with status %s", imageID, image.Status)
+			}
+		} else {
+			logDeploy(cmd, "image", "image=%s status=NotFound target=Available", imageID)
+		}
+		if time.Now().After(deadline) {
+			return aliyun.Image{}, fmt.Errorf("timed out waiting for image %s to become Available after %s", imageID, timeout)
+		}
+		if err := sleepContext(ctx, interval); err != nil {
+			return aliyun.Image{}, err
 		}
 	}
 }
@@ -510,6 +547,15 @@ func isTaskSuccess(status string) bool {
 func isTaskFailure(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
 	case "failed", "fail", "canceled", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func isImageFailureStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "createfailed", "failed", "fail":
 		return true
 	default:
 		return false
