@@ -9,7 +9,7 @@ require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.5.1
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.2
-	modernc.org/sqlite v1.51.0
+	modernc.org/sqlite v1.53.0
 )
 
 require (
@@ -33,10 +33,10 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/time v0.4.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	modernc.org/libc v1.72.3 // indirect
+	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
